@@ -13,4 +13,4 @@ services:
     disk:
       name: planner-data
       mountPath: /app/data
-      sizeGB: 1
+      sizeGB: 5  # bumped for larger PDF attachments; increase further if you'll store many large files

@@ -45,6 +45,7 @@ export const TABLES = `
     file_data TEXT,
     file_name TEXT,
     file_type TEXT,
+    file_size INTEGER,
     created_at INTEGER NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   );
@@ -66,6 +67,7 @@ export const TABLES = `
     file_data TEXT,
     file_name TEXT,
     file_type TEXT,
+    file_size INTEGER,
     created_at INTEGER NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   );
@@ -87,6 +89,7 @@ export const TABLES = `
     file_data TEXT,
     file_name TEXT,
     file_type TEXT,
+    file_size INTEGER,
     created_at INTEGER NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   );
@@ -109,6 +112,7 @@ export const TABLES = `
     file_data TEXT,
     file_name TEXT,
     file_type TEXT,
+    file_size INTEGER,
     date TEXT NOT NULL,
     created_at INTEGER NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -162,9 +166,34 @@ export const TABLES = `
 // Runs the schema against an opened sqlite3 Database instance.
 export async function ensureSchema(db) {
   const exec = promisified(db, 'exec');
+  const all = (sql) => new Promise((resolve, reject) =>
+    db.all(sql, (err, rows) => (err ? reject(err) : resolve(rows))));
+
   await exec('PRAGMA journal_mode = WAL');
   await exec('PRAGMA foreign_keys = ON');
   await exec(TABLES);
+
+  // Migration: CREATE TABLE IF NOT EXISTS does nothing to tables that already
+  // exist, so any column added after a table was first created (e.g. file_size)
+  // won't appear on databases created by an earlier version of this app.
+  // Add any missing columns here, idempotently, so upgrades never break existing data.
+  const requiredColumns = {
+    msc_subjects: [['file_size', 'INTEGER']],
+    nea_tech: [['file_size', 'INTEGER']],
+    nea_nontech: [['file_size', 'INTEGER']],
+    notes: [['file_size', 'INTEGER']]
+  };
+
+  for (const [table, columns] of Object.entries(requiredColumns)) {
+    const existing = await all(`PRAGMA table_info(${table})`);
+    const existingNames = new Set(existing.map(c => c.name));
+    for (const [name, type] of columns) {
+      if (!existingNames.has(name)) {
+        await exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
+        console.log(`[migration] Added column ${name} to ${table}`);
+      }
+    }
+  }
 }
 
 function promisified(obj, method) {
