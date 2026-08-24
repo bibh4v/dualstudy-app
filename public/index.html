@@ -773,6 +773,10 @@ async function apiFetch(path, options = {}) {
     window.location.href = '/auth.html';
     throw new Error('Unauthorized');
   }
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Request failed: ${res.status}`);
+  }
   return res.json();
 }
 
