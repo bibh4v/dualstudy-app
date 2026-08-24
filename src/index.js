@@ -3,7 +3,8 @@ import bcrypt from 'bcryptjs';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import Database from 'sqlite3';
-import { join } from 'path';
+import multer from 'multer';
+import { join, extname } from 'path';
 import { fileURLToPath } from 'url';
 import { mkdirSync } from 'fs';
 import { v4 as uuidv4 } from 'uuid';
@@ -12,10 +13,13 @@ import { ensureSchema } from './schema.js';
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const PORT = process.env.PORT || 3000;
 const dataDir = join(process.cwd(), 'data');
+const uploadsDir = join(dataDir, 'uploads');
 const SESSION_DURATION = 30 * 24 * 60 * 60 * 1000; // 30 days
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10MB per file
 
 // Open DB + create tables (idempotent)
 mkdirSync(dataDir, { recursive: true });
+mkdirSync(uploadsDir, { recursive: true });
 const db = new Database.Database(join(dataDir, 'planner.db'));
 await ensureSchema(db);
 
@@ -63,6 +67,56 @@ function setSessionCookie(res, sessionId) {
     maxAge: SESSION_DURATION
   });
 }
+
+// ===== FILE UPLOAD (disk-backed, per-user) =====
+const ALLOWED_MIME = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/jpg']);
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const userDir = join(uploadsDir, req.user.id);
+    mkdirSync(userDir, { recursive: true });
+    cb(null, userDir);
+  },
+  filename: (req, file, cb) => {
+    cb(null, `${uuidv4()}${extname(file.originalname).toLowerCase()}`);
+  }
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: MAX_UPLOAD_BYTES },
+  fileFilter: (req, file, cb) => {
+    if (!ALLOWED_MIME.has(file.mimetype)) return cb(new Error('Only PDF and image files are allowed'));
+    cb(null, true);
+  }
+});
+
+app.post('/api/upload', requireAuth, (req, res) => {
+  upload.single('file')(req, res, (err) => {
+    if (err instanceof multer.MulterError) {
+      const msg = err.code === 'LIMIT_FILE_SIZE' ? 'File too large — max 25MB' : err.message;
+      return res.status(400).json({ error: msg });
+    }
+    if (err) return res.status(400).json({ error: err.message });
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+    res.json({
+      url: `/api/files/${req.user.id}/${req.file.filename}`,
+      name: req.file.originalname,
+      type: req.file.mimetype,
+      size: req.file.size
+    });
+  });
+});
+
+// Serve an uploaded file — only to the user who owns it
+app.get('/api/files/:userId/:filename', requireAuth, (req, res) => {
+  if (req.params.userId !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
+  const filePath = join(uploadsDir, req.params.userId, req.params.filename);
+  res.sendFile(filePath, (err) => {
+    if (err && !res.headersSent) res.status(404).json({ error: 'File not found' });
+  });
+});
 
 // ===== AUTH ROUTES =====
 app.post('/api/auth/register', async (req, res) => {
@@ -173,28 +227,28 @@ app.get('/api/state', requireAuth, async (req, res) => {
       slots: slots.map(s => ({ id: s.id, label: s.label, type: s.type, start: s.start, dur: +s.dur })),
       mscSubjects: mscSubjects.map(s => ({
         id: s.id, name: s.name, pct: s.pct,
-        file: s.file_data ? { data: s.file_data, name: s.file_name, type: s.file_type } : null,
+        file: s.file_data ? { url: s.file_data, name: s.file_name, type: s.file_type, size: s.file_size } : null,
         subtopics: mscSubtopics.filter(st => st.subject_id === s.id).map(st => ({
           id: st.id, name: st.name, total: st.total, done: st.done
         }))
       })),
       neaTech: neaTech.map(s => ({
         id: s.id, name: s.name, pct: s.pct,
-        file: s.file_data ? { data: s.file_data, name: s.file_name, type: s.file_type } : null,
+        file: s.file_data ? { url: s.file_data, name: s.file_name, type: s.file_type, size: s.file_size } : null,
         subtopics: neaTechSubtopics.filter(st => st.topic_id === s.id).map(st => ({
           id: st.id, name: st.name, total: st.total, done: st.done
         }))
       })),
       neaNonTech: neaNonTech.map(s => ({
         id: s.id, name: s.name, pct: s.pct,
-        file: s.file_data ? { data: s.file_data, name: s.file_name, type: s.file_type } : null,
+        file: s.file_data ? { url: s.file_data, name: s.file_name, type: s.file_type, size: s.file_size } : null,
         subtopics: neaNonTechSubtopics.filter(st => st.topic_id === s.id).map(st => ({
           id: st.id, name: st.name, total: st.total, done: st.done
         }))
       })),
       notes: notes.map(n => ({
         id: n.id, title: n.title, cat: n.cat, body: n.body, date: n.date,
-        file: n.file_data ? { data: n.file_data, name: n.file_name, type: n.file_type } : null
+        file: n.file_data ? { url: n.file_data, name: n.file_name, type: n.file_type, size: n.file_size } : null
       })),
       tasks: tasks.map(t => ({
         id: t.id, name: t.name, track: t.track, dead: t.dead, window: t.window || '',
@@ -252,9 +306,9 @@ app.put('/api/state', requireAuth, async (req, res) => {
     // MSc subjects + subtopics
     for (const s of data.mscSubjects || []) {
       const sid = s.id || uuidv4();
-      await run('INSERT INTO msc_subjects (id, user_id, name, pct, file_data, file_name, file_type, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      await run('INSERT INTO msc_subjects (id, user_id, name, pct, file_data, file_name, file_type, file_size, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
         sid, userId, s.name, s.pct || 0,
-        s.file?.data || null, s.file?.name || null, s.file?.type || null, now);
+        s.file?.url || null, s.file?.name || null, s.file?.type || null, s.file?.size || null, now);
       for (const st of s.subtopics || []) {
         await run('INSERT INTO msc_subtopics (id, subject_id, name, total, done) VALUES (?, ?, ?, ?, ?)',
           st.id || uuidv4(), sid, st.name, st.total || 1, st.done || 0);
@@ -264,9 +318,9 @@ app.put('/api/state', requireAuth, async (req, res) => {
     // NEA Tech + subtopics
     for (const s of data.neaTech || []) {
       const sid = s.id || uuidv4();
-      await run('INSERT INTO nea_tech (id, user_id, name, pct, file_data, file_name, file_type, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      await run('INSERT INTO nea_tech (id, user_id, name, pct, file_data, file_name, file_type, file_size, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
         sid, userId, s.name, s.pct || 0,
-        s.file?.data || null, s.file?.name || null, s.file?.type || null, now);
+        s.file?.url || null, s.file?.name || null, s.file?.type || null, s.file?.size || null, now);
       for (const st of s.subtopics || []) {
         await run('INSERT INTO nea_tech_subtopics (id, topic_id, name, total, done) VALUES (?, ?, ?, ?, ?)',
           st.id || uuidv4(), sid, st.name, st.total || 1, st.done || 0);
@@ -276,9 +330,9 @@ app.put('/api/state', requireAuth, async (req, res) => {
     // NEA NonTech + subtopics
     for (const s of data.neaNonTech || []) {
       const sid = s.id || uuidv4();
-      await run('INSERT INTO nea_nontech (id, user_id, name, pct, file_data, file_name, file_type, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      await run('INSERT INTO nea_nontech (id, user_id, name, pct, file_data, file_name, file_type, file_size, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
         sid, userId, s.name, s.pct || 0,
-        s.file?.data || null, s.file?.name || null, s.file?.type || null, now);
+        s.file?.url || null, s.file?.name || null, s.file?.type || null, s.file?.size || null, now);
       for (const st of s.subtopics || []) {
         await run('INSERT INTO nea_nontech_subtopics (id, topic_id, name, total, done) VALUES (?, ?, ?, ?, ?)',
           st.id || uuidv4(), sid, st.name, st.total || 1, st.done || 0);
@@ -287,9 +341,9 @@ app.put('/api/state', requireAuth, async (req, res) => {
 
     // Notes
     for (const n of data.notes || []) {
-      await run('INSERT INTO notes (id, user_id, title, cat, body, file_data, file_name, file_type, date, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      await run('INSERT INTO notes (id, user_id, title, cat, body, file_data, file_name, file_type, file_size, date, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
         n.id || uuidv4(), userId, n.title, n.cat, n.body || '',
-        n.file?.data || null, n.file?.name || null, n.file?.type || null,
+        n.file?.url || null, n.file?.name || null, n.file?.type || null, n.file?.size || null,
         n.date || new Date().toLocaleDateString(), now);
     }
 
