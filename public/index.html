@@ -1289,7 +1289,7 @@ $("addNote").addEventListener("click",async()=>{
       setSyncStatus('ok', 'Synced');
       toast("Note with attachment saved");
     }catch(err){
-      setSyncStatus('ok', 'Synced');
+      setSyncStatus('err', 'Save failed');
       toast(err.message||"Upload failed");
     }
   }else{
@@ -1333,7 +1333,7 @@ $("addMsc").addEventListener("click",async()=>{
   const file=$("mscFile").files[0];
   const subject={id:uid(),name,pct:Math.max(0,Math.min(100,+$("mscPct").value||0)), subtopics:[]};
   if(file){
-    const maxSize=25*1024*1024;
+    const maxSize=10*1024*1024;
     if(file.size > maxSize){toast("File too large — max 10MB");return;}
     setSyncStatus('syncing', 'Uploading…');
     try{
@@ -1348,7 +1348,7 @@ $("addMsc").addEventListener("click",async()=>{
       setSyncStatus('ok', 'Synced');
       toast("MSc subject with attachment added");
     }catch(err){
-      setSyncStatus('ok', 'Synced');
+      setSyncStatus('err', 'Save failed');
       toast(err.message||"Upload failed");
     }
   }else{
@@ -1369,7 +1369,7 @@ $("addNt").addEventListener("click",async()=>{
   const file=$("ntFile").files[0];
   const topic={id:uid(),name,pct:Math.max(0,Math.min(100,+$("ntPct").value||0)), subtopics:[]};
   if(file){
-    const maxSize=25*1024*1024;
+    const maxSize=10*1024*1024;
     if(file.size > maxSize){toast("File too large — max 10MB");return;}
     setSyncStatus('syncing', 'Uploading…');
     try{
@@ -1384,7 +1384,7 @@ $("addNt").addEventListener("click",async()=>{
       setSyncStatus('ok', 'Synced');
       toast("Technical topic with attachment added");
     }catch(err){
-      setSyncStatus('ok', 'Synced');
+      setSyncStatus('err', 'Save failed');
       toast(err.message||"Upload failed");
     }
   }else{
@@ -1405,7 +1405,7 @@ $("addNnt").addEventListener("click",async()=>{
   const file=$("nntFile").files[0];
   const topic={id:uid(),name,pct:Math.max(0,Math.min(100,+$("nntPct").value||0)), subtopics:[]};
   if(file){
-    const maxSize=25*1024*1024;
+    const maxSize=10*1024*1024;
     if(file.size > maxSize){toast("File too large — max 10MB");return;}
     setSyncStatus('syncing', 'Uploading…');
     try{
@@ -1420,7 +1420,7 @@ $("addNnt").addEventListener("click",async()=>{
       setSyncStatus('ok', 'Synced');
       toast("Non-technical topic with attachment added");
     }catch(err){
-      setSyncStatus('ok', 'Synced');
+      setSyncStatus('err', 'Save failed');
       toast(err.message||"Upload failed");
     }
   }else{
