@@ -447,7 +447,7 @@ input,select,textarea{font-family:inherit;color:inherit}
             </div>
             <div class="row" style="align-items:center;gap:8px">
               <input type="file" id="mscFile" accept=".pdf,.jpg,.jpeg,.png,.webp" style="flex:1" />
-              <span style="font-size:.7rem;color:var(--ink-faint)">PDF, JPG, PNG up to ~2MB (stored as data URL)</span>
+              <span style="font-size:.7rem;color:var(--ink-faint)">PDF, JPG, PNG up to ~10MB (stored as data URL)</span>
             </div>
             <div id="mscFilePreview" style="display:none;margin-top:8px"></div>
             <button class="btn primary" id="addMsc">+ Add subject</button>
@@ -479,7 +479,7 @@ input,select,textarea{font-family:inherit;color:inherit}
               </div>
               <div class="row" style="align-items:center;gap:8px">
                 <input type="file" id="ntFile" accept=".pdf,.jpg,.jpeg,.png,.webp" style="flex:1" />
-                <span style="font-size:.7rem;color:var(--ink-faint)">PDF, JPG, PNG up to ~2MB (stored as data URL)</span>
+                <span style="font-size:.7rem;color:var(--ink-faint)">PDF, JPG, PNG up to ~10MB (stored as data URL)</span>
               </div>
               <div id="ntFilePreview" style="display:none;margin-top:8px"></div>
               <button class="btn primary" id="addNt">+ Add technical topic</button>
@@ -497,7 +497,7 @@ input,select,textarea{font-family:inherit;color:inherit}
               </div>
               <div class="row" style="align-items:center;gap:8px">
                 <input type="file" id="nntFile" accept=".pdf,.jpg,.jpeg,.png,.webp" style="flex:1" />
-                <span style="font-size:.7rem;color:var(--ink-faint)">PDF, JPG, PNG up to ~2MB (stored as data URL)</span>
+                <span style="font-size:.7rem;color:var(--ink-faint)">PDF, JPG, PNG up to ~10MB (stored as data URL)</span>
               </div>
               <div id="nntFilePreview" style="display:none;margin-top:8px"></div>
               <button class="btn primary" id="addNnt">+ Add non-technical topic</button>
@@ -534,7 +534,7 @@ input,select,textarea{font-family:inherit;color:inherit}
               <textarea id="nBody" placeholder="Key takeaway / why it matters for NEA..."></textarea>
               <div class="row" style="align-items:center;gap:8px">
                 <input type="file" id="nFile" accept=".pdf,.jpg,.jpeg,.png,.webp" style="flex:1" />
-                <span style="font-size:.7rem;color:var(--ink-faint)">PDF, JPG, PNG up to ~2MB (stored as data URL)</span>
+                <span style="font-size:.7rem;color:var(--ink-faint)">PDF, JPG, PNG up to ~10MB (stored as data URL)</span>
               </div>
               <div id="filePreview" style="display:none;margin-top:8px"></div>
               <button class="btn primary" id="addNote">+ Save note</button>
@@ -779,6 +779,19 @@ async function apiFetch(path, options = {}) {
 async function loadState() {
   const data = await apiFetch('/api/state');
   S = { ...S, ...data };
+}
+
+// Uploads a file to disk on the server and returns {url, name, type, size}.
+// Only the small URL reference gets stored in state — not the file itself —
+// so autosave never re-sends the file bytes on every edit.
+async function uploadFile(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+  const res = await fetch('/api/upload', { method: 'POST', credentials: 'include', body: formData });
+  if (res.status === 401) { window.location.href = '/auth.html'; throw new Error('Unauthorized'); }
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Upload failed');
+  return data;
 }
 
 async function saveState() {
@@ -1029,9 +1042,9 @@ function renderNotes(){
     let fileHtml="";
     if(n.file){
       if(n.file.type.startsWith("image/")){
-        fileHtml=`<div class="note-file" style="margin-top:8px"><img src="${n.file.data}" style="max-width:300px;max-height:200px;border-radius:4px;border:1px solid var(--line);cursor:zoom-in" alt="${esc(n.file.name)}" onclick="window.open(this.src,'_blank')" title="Click to open full size" /></div>`;
+        fileHtml=`<div class="note-file" style="margin-top:8px"><img src="${n.file.url}" style="max-width:300px;max-height:200px;border-radius:4px;border:1px solid var(--line);cursor:zoom-in" alt="${esc(n.file.name)}" onclick="window.open(this.src,'_blank')" title="Click to open full size" /></div>`;
       }else if(n.file.type==="application/pdf"){
-        fileHtml=`<div class="note-file" style="margin-top:8px"><a href="${n.file.data}" target="_blank" style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;background:var(--surface-2);border:1px solid var(--line);border-radius:4px;text-decoration:none;color:var(--ink)"><span>📄</span><span>${esc(n.file.name)}</span><span style="font-size:.7rem;color:var(--ink-faint)">(${((n.file.data.length*3/4)/1024).toFixed(1)} KB)</span></a></div>`;
+        fileHtml=`<div class="note-file" style="margin-top:8px"><a href="${n.file.url}" target="_blank" style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;background:var(--surface-2);border:1px solid var(--line);border-radius:4px;text-decoration:none;color:var(--ink)"><span>📄</span><span>${esc(n.file.name)}</span>${n.file.size?`<span style="font-size:.7rem;color:var(--ink-faint)">(${(n.file.size/1024/1024).toFixed(1)} MB)</span>`:''}</a></div>`;
       }
     }
     return `<div class="note-item" data-id="${n.id}">
@@ -1050,9 +1063,9 @@ function renderNotes(){
 function renderFile(file){
   if(!file) return "";
   if(file.type.startsWith("image/")){
-    return `<div class="note-file" style="margin-top:6px"><img src="${file.data}" style="max-width:250px;max-height:150px;border-radius:4px;border:1px solid var(--line);cursor:zoom-in" alt="${esc(file.name)}" onclick="window.open(this.src,'_blank')" title="Click to open full size" /></div>`;
+    return `<div class="note-file" style="margin-top:6px"><img src="${file.url}" style="max-width:250px;max-height:150px;border-radius:4px;border:1px solid var(--line);cursor:zoom-in" alt="${esc(file.name)}" onclick="window.open(this.src,'_blank')" title="Click to open full size" /></div>`;
   }else if(file.type==="application/pdf"){
-    return `<div class="note-file" style="margin-top:6px"><a href="${file.data}" target="_blank" style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;background:var(--surface-2);border:1px solid var(--line);border-radius:4px;text-decoration:none;color:var(--ink);font-size:.75rem"><span>📄</span><span>${esc(file.name)}</span><span style="font-size:.7rem;color:var(--ink-faint)">(${((file.data.length*3/4)/1024).toFixed(1)} KB)</span></a></div>`;
+    return `<div class="note-file" style="margin-top:6px"><a href="${file.url}" target="_blank" style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;background:var(--surface-2);border:1px solid var(--line);border-radius:4px;text-decoration:none;color:var(--ink);font-size:.75rem"><span>📄</span><span>${esc(file.name)}</span>${file.size?`<span style="font-size:.7rem;color:var(--ink-faint)">(${(file.size/1024/1024).toFixed(1)} MB)</span>`:''}</a></div>`;
   }
   return "";
 }
@@ -1257,11 +1270,12 @@ $("addNote").addEventListener("click",async()=>{
   const d=new Date();
   const note={id:uid(),title,cat:$("nCat").value,body:$("nBody").value.trim(),date:d.toLocaleDateString(undefined,{day:"numeric",month:"short"})+" "+d.toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"})};
   if(file){
-    const maxSize=2*1024*1024; // 2MB
-    if(file.size > maxSize){toast("File too large — max 2MB");return;}
-    const reader=new FileReader();
-    reader.onload=async e=>{
-      note.file={data:e.target.result,name:file.name,type:file.type};
+    const maxSize=10*1024*1024; // 10MB
+    if(file.size > maxSize){toast("File too large — max 10MB");return;}
+    setSyncStatus('syncing', 'Uploading…');
+    try{
+      const uploaded=await uploadFile(file);
+      note.file={url:uploaded.url,name:uploaded.name,type:uploaded.type,size:uploaded.size};
       S.notes.push(note);
       $("nTitle").value="";$("nBody").value="";$("nFile").value="";
       $("filePreview").style.display="none";$("filePreview").innerHTML="";
@@ -1270,8 +1284,10 @@ $("addNote").addEventListener("click",async()=>{
       render();
       setSyncStatus('ok', 'Synced');
       toast("Note with attachment saved");
-    };
-    reader.readAsDataURL(file);
+    }catch(err){
+      setSyncStatus('ok', 'Synced');
+      toast(err.message||"Upload failed");
+    }
   }else{
     S.notes.push(note);
     $("nTitle").value="";$("nBody").value="";$("nFile").value="";
@@ -1313,11 +1329,12 @@ $("addMsc").addEventListener("click",async()=>{
   const file=$("mscFile").files[0];
   const subject={id:uid(),name,pct:Math.max(0,Math.min(100,+$("mscPct").value||0)), subtopics:[]};
   if(file){
-    const maxSize=2*1024*1024;
-    if(file.size > maxSize){toast("File too large — max 2MB");return;}
-    const reader=new FileReader();
-    reader.onload=async e=>{
-      subject.file={data:e.target.result,name:file.name,type:file.type};
+    const maxSize=25*1024*1024;
+    if(file.size > maxSize){toast("File too large — max 10MB");return;}
+    setSyncStatus('syncing', 'Uploading…');
+    try{
+      const uploaded=await uploadFile(file);
+      subject.file={url:uploaded.url,name:uploaded.name,type:uploaded.type,size:uploaded.size};
       S.mscSubjects.push(subject);
       $("mscName").value="";$("mscPct").value=0;$("mscFile").value="";
       $("mscFilePreview").style.display="none";$("mscFilePreview").innerHTML="";
@@ -1326,8 +1343,10 @@ $("addMsc").addEventListener("click",async()=>{
       render();
       setSyncStatus('ok', 'Synced');
       toast("MSc subject with attachment added");
-    };
-    reader.readAsDataURL(file);
+    }catch(err){
+      setSyncStatus('ok', 'Synced');
+      toast(err.message||"Upload failed");
+    }
   }else{
     S.mscSubjects.push(subject);
     $("mscName").value="";$("mscPct").value=0;$("mscFile").value="";
@@ -1346,11 +1365,12 @@ $("addNt").addEventListener("click",async()=>{
   const file=$("ntFile").files[0];
   const topic={id:uid(),name,pct:Math.max(0,Math.min(100,+$("ntPct").value||0)), subtopics:[]};
   if(file){
-    const maxSize=2*1024*1024;
-    if(file.size > maxSize){toast("File too large — max 2MB");return;}
-    const reader=new FileReader();
-    reader.onload=async e=>{
-      topic.file={data:e.target.result,name:file.name,type:file.type};
+    const maxSize=25*1024*1024;
+    if(file.size > maxSize){toast("File too large — max 10MB");return;}
+    setSyncStatus('syncing', 'Uploading…');
+    try{
+      const uploaded=await uploadFile(file);
+      topic.file={url:uploaded.url,name:uploaded.name,type:uploaded.type,size:uploaded.size};
       S.neaTech.push(topic);
       $("ntName").value="";$("ntPct").value=0;$("ntFile").value="";
       $("ntFilePreview").style.display="none";$("ntFilePreview").innerHTML="";
@@ -1359,8 +1379,10 @@ $("addNt").addEventListener("click",async()=>{
       render();
       setSyncStatus('ok', 'Synced');
       toast("Technical topic with attachment added");
-    };
-    reader.readAsDataURL(file);
+    }catch(err){
+      setSyncStatus('ok', 'Synced');
+      toast(err.message||"Upload failed");
+    }
   }else{
     S.neaTech.push(topic);
     $("ntName").value="";$("ntPct").value=0;$("ntFile").value="";
@@ -1379,11 +1401,12 @@ $("addNnt").addEventListener("click",async()=>{
   const file=$("nntFile").files[0];
   const topic={id:uid(),name,pct:Math.max(0,Math.min(100,+$("nntPct").value||0)), subtopics:[]};
   if(file){
-    const maxSize=2*1024*1024;
-    if(file.size > maxSize){toast("File too large — max 2MB");return;}
-    const reader=new FileReader();
-    reader.onload=async e=>{
-      topic.file={data:e.target.result,name:file.name,type:file.type};
+    const maxSize=25*1024*1024;
+    if(file.size > maxSize){toast("File too large — max 10MB");return;}
+    setSyncStatus('syncing', 'Uploading…');
+    try{
+      const uploaded=await uploadFile(file);
+      topic.file={url:uploaded.url,name:uploaded.name,type:uploaded.type,size:uploaded.size};
       S.neaNonTech.push(topic);
       $("nntName").value="";$("nntPct").value=0;$("nntFile").value="";
       $("nntFilePreview").style.display="none";$("nntFilePreview").innerHTML="";
@@ -1392,8 +1415,10 @@ $("addNnt").addEventListener("click",async()=>{
       render();
       setSyncStatus('ok', 'Synced');
       toast("Non-technical topic with attachment added");
-    };
-    reader.readAsDataURL(file);
+    }catch(err){
+      setSyncStatus('ok', 'Synced');
+      toast(err.message||"Upload failed");
+    }
   }else{
     S.neaNonTech.push(topic);
     $("nntName").value="";$("nntPct").value=0;$("nntFile").value="";

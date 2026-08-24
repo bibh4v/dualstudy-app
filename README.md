@@ -57,6 +57,6 @@ docker compose up -d --build   # binds port 3000, data in named volume
 
 ## Notes
 
-- Attachments are stored as base64 in SQLite (client enforces ~2 MB limit).
+- Attachments are stored as base64 in SQLite (client enforces ~10 MB limit).
 - `PUT /api/state` replaces all rows in one transaction — last-write-wins sync.
 - Sessions expire after 30 days.
