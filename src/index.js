@@ -94,7 +94,7 @@ const upload = multer({
 app.post('/api/upload', requireAuth, (req, res) => {
   upload.single('file')(req, res, (err) => {
     if (err instanceof multer.MulterError) {
-      const msg = err.code === 'LIMIT_FILE_SIZE' ? 'File too large — max 25MB' : err.message;
+      const msg = err.code === 'LIMIT_FILE_SIZE' ? 'File too large — max 10MB' : err.message;
       return res.status(400).json({ error: msg });
     }
     if (err) return res.status(400).json({ error: err.message });
