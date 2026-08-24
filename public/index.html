@@ -828,7 +828,8 @@ async function doSave(){
     await saveState();
     setSyncStatus('ok','Synced');
   }catch(e){
-    setSyncStatus('err','Offline');
+    setSyncStatus('err','Save failed');
+    toast(e.message||'Failed to save');
   }
   saving=false;
   if(pendingSave){pendingSave=false;doSave();}
