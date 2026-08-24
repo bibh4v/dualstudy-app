@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: dual-track-planner
+    env: docker
+    dockerfilePath: Dockerfile
+    region: oregon  # or frankfurt, singapore, etc.
+    plan: starter  # required: free-tier Render services cannot attach a persistent disk
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+    disk:
+      name: planner-data
+      mountPath: /app/data
+      sizeGB: 1
