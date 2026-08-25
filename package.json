@@ -1,22 +1,17 @@
 {
   "name": "dual-track-planner-server",
   "version": "1.0.0",
-  "description": "Backend API for Dual-Track Planner (MSc + NEA Level 8)",
+  "description": "Backend API for Dual-Track Planner (MSc + NEA Level 8) — Supabase Edition",
   "main": "src/index.js",
   "type": "module",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "node --watch src/index.js",
-    "init-db": "node src/init-db.js"
+    "dev": "node --watch src/index.js"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
     "express": "^4.19.2",
-    "sqlite3": "^5.1.7",
-    "bcryptjs": "^2.4.3",
-    "cookie-parser": "^1.4.6",
-    "cors": "^2.8.5",
-    "multer": "^1.4.5-lts.1",
-    "uuid": "^9.0.1"
+    "cors": "^2.8.5"
   },
   "devDependencies": {}
 }

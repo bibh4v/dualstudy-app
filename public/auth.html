@@ -18,10 +18,16 @@
     .field input:focus{outline:none;border-color:#e08a1e}
     .btn{width:100%;padding:13px;border:none;border-radius:9px;background:#e08a1e;color:#1b2330;font-size:.95rem;font-weight:600;cursor:pointer;margin-top:8px}
     .btn:hover{filter:brightness(1.08)}
+    .btn:disabled{opacity:.6;cursor:not-allowed}
     .switch{text-align:center;margin-top:16px;font-size:.82rem;color:#aab6c8}
     .switch a{color:#f0a23c;text-decoration:none;font-weight:600}
-    .error{color:#ef6b63;font-size:.8rem;margin-top:8px;text-align:center}
+    .error{color:#ef6b63;font-size:.8rem;margin-top:8px;text-align:center;min-height:1.2em}
     .loading{text-align:center;color:#6f7d92;font-size:.85rem;padding:40px}
+    .divider{display:flex;align-items:center;gap:12px;margin:20px 0;color:#6f7d92;font-size:.75rem}
+    .divider::before,.divider::after{content:"";flex:1;height:1px;background:#2c3543}
+    .oauth-btn{width:100%;display:flex;align-items:center;justify-content:center;gap:10px;padding:12px;border:1px solid #2c3543;border-radius:9px;background:#222a36;color:#e9eef5;font-size:.9rem;font-weight:500;cursor:pointer;transition:.15s}
+    .oauth-btn:hover{border-color:#e08a1e;background:#1b212b}
+    .oauth-btn img{width:20px;height:20px}
   </style>
 </head>
 <body>
@@ -31,6 +37,7 @@
       <p>MSc &middot; NEA Level 8 — sync across all your devices</p>
     </div>
     <div class="card" id="authCard">
+      <!-- Login Form -->
       <div id="loginForm">
         <div class="field">
           <label for="loginEmail">Email</label>
@@ -43,6 +50,8 @@
         <button class="btn" id="loginBtn">Sign In</button>
         <div class="error" id="loginError"></div>
       </div>
+
+      <!-- Register Form -->
       <div id="registerForm" style="display:none">
         <div class="field">
           <label for="regEmail">Email</label>
@@ -55,6 +64,16 @@
         <button class="btn" id="regBtn">Create Account</button>
         <div class="error" id="regError"></div>
       </div>
+
+      <!-- Divider -->
+      <div class="divider">or continue with</div>
+
+      <!-- Google OAuth -->
+      <button class="oauth-btn" id="googleBtn">
+        <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%234285F4' d='M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z'/%3E%3Cpath fill='%2334A853' d='M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z'/%3E%3Cpath fill='%23FBBC05' d='M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z'/%3E%3Cpath fill='%23EA4335' d='M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z'/%3E%3C/svg%3E" alt="Google" />
+        Continue with Google
+      </button>
+
       <div class="switch">
         <span id="switchText">New here?</span>
         <a href="#" id="switchLink">Create an account</a>
@@ -62,75 +81,174 @@
     </div>
   </div>
 
-  <script>
-    let isRegister = false;
-    const switchLink = document.getElementById('switchLink');
-    const switchText = document.getElementById('switchText');
-    const loginForm = document.getElementById('loginForm');
-    const registerForm = document.getElementById('registerForm');
+  <!-- Supabase CDN + Config (no build step required) -->
+<script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+<script src="./config.js"></script>
 
-    switchLink.addEventListener('click', (e) => {
-      e.preventDefault();
-      isRegister = !isRegister;
-      if (isRegister) {
-        loginForm.style.display = 'none';
-        registerForm.style.display = 'block';
-        switchText.textContent = 'Already have an account?';
-        switchLink.textContent = 'Sign in';
+<script>
+  /* ============ SUPABASE INIT ============ */
+  const { createClient } = supabase;
+  const sb = createClient(window.SUPABASE_CONFIG.url, window.SUPABASE_CONFIG.anonKey);
+
+  let isRegister = false;
+  const switchLink = document.getElementById('switchLink');
+  const switchText = document.getElementById('switchText');
+  const loginForm = document.getElementById('loginForm');
+  const registerForm = document.getElementById('registerForm');
+  const loginBtn = document.getElementById('loginBtn');
+  const regBtn = document.getElementById('regBtn');
+  const googleBtn = document.getElementById('googleBtn');
+
+  // Toggle between login/register
+  switchLink.addEventListener('click', (e) => {
+    e.preventDefault();
+    isRegister = !isRegister;
+    if (isRegister) {
+      loginForm.style.display = 'none';
+      registerForm.style.display = 'block';
+      switchText.textContent = 'Already have an account?';
+      switchLink.textContent = 'Sign in';
+    } else {
+      loginForm.style.display = 'block';
+      registerForm.style.display = 'none';
+      switchText.textContent = 'New here?';
+      switchLink.textContent = 'Create an account';
+    }
+    clearErrors();
+  });
+
+  function clearErrors() {
+    document.getElementById('loginError').textContent = '';
+    document.getElementById('regError').textContent = '';
+  }
+
+  function setLoading(btn, loading) {
+    btn.disabled = loading;
+    btn.textContent = loading ? 'Please wait…' : (isRegister ? 'Create Account' : 'Sign In');
+  }
+
+  function showError(el, msg) {
+    el.textContent = msg;
+  }
+
+  // Email/Password Sign In
+  loginBtn.addEventListener('click', async () => {
+    const email = document.getElementById('loginEmail').value.trim();
+    const password = document.getElementById('loginPass').value;
+    const errEl = document.getElementById('loginError');
+    errEl.textContent = '';
+
+    if (!email || !password) {
+      errEl.textContent = 'Email and password required';
+      return;
+    }
+
+    setLoading(loginBtn, true);
+    try {
+      const { data, error } = await sb.auth.signInWithPassword({
+        email: email.toLowerCase(),
+        password,
+      });
+      if (error) {
+        showError(errEl, error.message);
+        return;
+      }
+      // Success - redirect to main app
+      window.location.href = '/';
+    } catch (e) {
+      showError(errEl, 'Network error. Please try again.');
+    } finally {
+      setLoading(loginBtn, false);
+    }
+  });
+
+  // Email/Password Sign Up
+  regBtn.addEventListener('click', async () => {
+    const email = document.getElementById('regEmail').value.trim();
+    const password = document.getElementById('regPass').value;
+    const errEl = document.getElementById('regError');
+    errEl.textContent = '';
+
+    if (!email || !password) {
+      errEl.textContent = 'Email and password required';
+      return;
+    }
+    if (password.length < 6) {
+      errEl.textContent = 'Password must be at least 6 characters';
+      return;
+    }
+
+    setLoading(regBtn, true);
+    try {
+      const { data, error } = await sb.auth.signUp({
+        email: email.toLowerCase(),
+        password,
+      });
+      if (error) {
+        showError(errEl, error.message);
+        return;
+      }
+      // Check if email confirmation is needed
+      if (data.user && !data.session) {
+        showError(errEl, 'Account created! Check your email to confirm, then sign in.');
+        // Auto-switch to login form after a moment
+        setTimeout(() => {
+          switchLink.click();
+        }, 3000);
       } else {
-        loginForm.style.display = 'block';
-        registerForm.style.display = 'none';
-        switchText.textContent = 'New here?';
-        switchLink.textContent = 'Create an account';
-      }
-    });
-
-    async function handleLogin() {
-      const email = document.getElementById('loginEmail').value.trim();
-      const password = document.getElementById('loginPass').value;
-      const errEl = document.getElementById('loginError');
-      errEl.textContent = '';
-      if (!email || !password) { errEl.textContent = 'Email and password required'; return; }
-      try {
-        const res = await fetch('/api/auth/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, password }),
-          credentials: 'include'
-        });
-        const data = await res.json();
-        if (!res.ok) { errEl.textContent = data.error || 'Login failed'; return; }
+        // Auto-confirmed (if email confirm disabled in Supabase)
         window.location.href = '/';
-      } catch (e) {
-        errEl.textContent = 'Network error';
       }
+    } catch (e) {
+      showError(errEl, 'Network error. Please try again.');
+    } finally {
+      setLoading(regBtn, false);
     }
+  });
 
-    async function handleRegister() {
-      const email = document.getElementById('regEmail').value.trim();
-      const password = document.getElementById('regPass').value;
-      const errEl = document.getElementById('regError');
-      errEl.textContent = '';
-      if (!email || !password) { errEl.textContent = 'Email and password required'; return; }
-      try {
-        const res = await fetch('/api/auth/register', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, password }),
-          credentials: 'include'
-        });
-        const data = await res.json();
-        if (!res.ok) { errEl.textContent = data.error || 'Registration failed'; return; }
-        window.location.href = '/';
-      } catch (e) {
-        errEl.textContent = 'Network error';
+  // Google OAuth
+  googleBtn.addEventListener('click', async () => {
+    googleBtn.disabled = true;
+    googleBtn.textContent = 'Redirecting…';
+    try {
+      const { error } = await sb.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin + '/',
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          },
+        },
+      });
+      if (error) {
+        alert('Google sign-in failed: ' + error.message);
       }
+      // Redirect happens automatically
+    } catch (e) {
+      alert('Google sign-in failed: ' + e.message);
+    } finally {
+      googleBtn.disabled = false;
+      googleBtn.textContent = 'Continue with Google';
     }
+  });
 
-    document.getElementById('loginBtn').addEventListener('click', handleLogin);
-    document.getElementById('regBtn').addEventListener('click', handleRegister);
-    document.getElementById('loginPass').addEventListener('keypress', (e) => { if (e.key === 'Enter') handleLogin(); });
-    document.getElementById('regPass').addEventListener('keypress', (e) => { if (e.key === 'Enter') handleRegister(); });
-  </script>
+  // Enter key handlers
+  document.getElementById('loginPass').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') loginBtn.click();
+  });
+  document.getElementById('regPass').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') regBtn.click();
+  });
+
+  // Check for existing session on load (handles OAuth redirect)
+  async function checkSession() {
+    const { data: { session } } = await sb.auth.getSession();
+    if (session) {
+      window.location.href = '/';
+    }
+  }
+  checkSession();
+</script>
 </body>
 </html>
