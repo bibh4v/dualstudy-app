@@ -2795,14 +2795,15 @@ sb.auth.onAuthStateChange((event, session) => {
     // User signed out - redirect to auth page
     console.log('[onAuthStateChange] Redirecting to auth.html');
     window.location.href = '/auth.html';
-  } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-    // User signed in or token refreshed - reload state if we're on the main page
-    if (window.location.pathname === '/' || window.location.pathname === '/index.html') {
-      // Reload the page to re-initialize with new session
-      console.log('[onAuthStateChange] Reloading page for new session');
-      window.location.reload();
-    }
   }
+  // NOTE: SIGNED_IN and TOKEN_REFRESHED intentionally do nothing here.
+  // init() already loads state once on page load, and SIGNED_IN fires
+  // every time this listener is registered against an already-persisted
+  // session (not just on a fresh login) while TOKEN_REFRESHED fires
+  // periodically in the background. Reloading the page on either of
+  // these caused an infinite reload loop — the page would reload, the
+  // listener would re-register, SIGNED_IN would fire again immediately,
+  // and so on, wiping out whatever the user was doing every few seconds.
 });
 
 /* ============ INIT ============ */
