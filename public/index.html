@@ -1543,7 +1543,18 @@ function toMin(t){const[a,b]=t.split(":").map(Number);return a*60+b;}
 function fmt(min){min=Math.max(0,Math.round(min));const h=Math.floor(min/60),m=min%60;return h?(m?`${h}h ${m}m`:`${h}h`):`${m}m`;}
 function hhmm(min){min=((min%1440)+1440)%1440;const h=Math.floor(min/60),m=min%60;return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;}
 function toast(m){const t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("show"),1900);}
-function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6);}
+function uid(){
+  // Table `id` columns are UUID type, so client-generated IDs must be real
+  // UUIDs — the old Date.now()+Math.random() string (e.g. "m3k2j1a4b9x")
+  // gets rejected by Postgres with "invalid input syntax for type uuid".
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  // Fallback for older browsers without crypto.randomUUID
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
 
 /* ============ CORE SCHEDULE BUILDER ============ */
 function buildSchedule(){
