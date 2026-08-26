@@ -8,9 +8,19 @@ import express from 'express';
 import cors from 'cors';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
+import 'dotenv/config';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3002;
+
+// Load Supabase config from environment
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY;
+
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    console.error('❌ Supabase credentials missing! Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env file.');
+    process.exit(1);
+}
 
 const app = express();
 
@@ -20,6 +30,21 @@ app.use(cors({
     origin: true,
     credentials: true
 }));
+
+// Serve config.js with real Supabase credentials
+app.get('/config.js', (req, res) => {
+    res.set('Content-Type', 'application/javascript');
+    res.send(`
+// ============================================================================
+// Dual-Track Planner — Supabase Configuration (Auto-generated from .env)
+// ============================================================================
+
+window.SUPABASE_CONFIG = {
+    url: '${SUPABASE_URL}',
+    anonKey: '${SUPABASE_ANON_KEY}'
+};
+`);
+});
 
 // Serve static frontend
 app.use(express.static(join(__dirname, '..', 'public')));
@@ -46,4 +71,5 @@ app.listen(PORT, () => {
     console.log(`Dual-Track Planner server running on http://localhost:${PORT}`);
     console.log(`Frontend served from: ${join(__dirname, '..', 'public')}`);
     console.log(`Health check: http://localhost:${PORT}/api/health`);
+    console.log(`Config endpoint: http://localhost:${PORT}/config.js`);
 });

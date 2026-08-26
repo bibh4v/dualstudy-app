@@ -88,7 +88,14 @@
 <script>
   /* ============ SUPABASE INIT ============ */
   const { createClient } = supabase;
-  const sb = createClient(window.SUPABASE_CONFIG.url, window.SUPABASE_CONFIG.anonKey);
+  const sb = createClient(window.SUPABASE_CONFIG.url, window.SUPABASE_CONFIG.anonKey, {
+    auth: {
+      autoRefreshToken: true,
+      persistSession: true,
+      detectSessionInUrl: true
+    }
+  });
+  console.log('[Auth] Supabase client initialized');
 
   let isRegister = false;
   const switchLink = document.getElementById('switchLink');
@@ -145,18 +152,29 @@
 
     setLoading(loginBtn, true);
     try {
+      console.log('[Auth] Attempting sign in for:', email.toLowerCase());
+      console.log('[Auth] Supabase URL:', window.SUPABASE_CONFIG?.url);
       const { data, error } = await sb.auth.signInWithPassword({
         email: email.toLowerCase(),
         password,
       });
       if (error) {
+        console.error('[Auth] Sign in error:', error.message, error);
         showError(errEl, error.message);
         return;
       }
+      console.log('[Auth] Sign in successful for:', data.user?.email, 'Session:', !!data.session);
       // Success - redirect to main app
       window.location.href = '/';
     } catch (e) {
-      showError(errEl, 'Network error. Please try again.');
+      console.error('[Auth] Sign in exception:', e);
+      // Show more specific error
+      let msg = 'Network error';
+      if (e.message) msg += ': ' + e.message;
+      if (e.name === 'TypeError' && e.message.includes('fetch')) {
+        msg += ' - Check Supabase URL in config.js and CORS settings in Dashboard';
+      }
+      showError(errEl, msg);
     } finally {
       setLoading(loginBtn, false);
     }
@@ -180,14 +198,17 @@
 
     setLoading(regBtn, true);
     try {
+      console.log('[Auth] Attempting sign up for:', email.toLowerCase());
       const { data, error } = await sb.auth.signUp({
         email: email.toLowerCase(),
         password,
       });
       if (error) {
+        console.error('[Auth] Sign up error:', error.message);
         showError(errEl, error.message);
         return;
       }
+      console.log('[Auth] Sign up result:', data.user?.email, 'Session:', !!data.session);
       // Check if email confirmation is needed
       if (data.user && !data.session) {
         showError(errEl, 'Account created! Check your email to confirm, then sign in.');
@@ -197,10 +218,12 @@
         }, 3000);
       } else {
         // Auto-confirmed (if email confirm disabled in Supabase)
+        console.log('[Auth] Sign up auto-confirmed, redirecting...');
         window.location.href = '/';
       }
     } catch (e) {
-      showError(errEl, 'Network error. Please try again.');
+      console.error('[Auth] Sign up exception:', e);
+      showError(errEl, 'Network error: ' + (e.message || 'Unknown error'));
     } finally {
       setLoading(regBtn, false);
     }
@@ -211,6 +234,7 @@
     googleBtn.disabled = true;
     googleBtn.textContent = 'Redirecting…';
     try {
+      console.log('[Auth] Initiating Google OAuth...');
       const { error } = await sb.auth.signInWithOAuth({
         provider: 'google',
         options: {
@@ -222,10 +246,12 @@
         },
       });
       if (error) {
+        console.error('[Auth] Google OAuth error:', error.message);
         alert('Google sign-in failed: ' + error.message);
       }
       // Redirect happens automatically
     } catch (e) {
+      console.error('[Auth] Google OAuth exception:', e);
       alert('Google sign-in failed: ' + e.message);
     } finally {
       googleBtn.disabled = false;
@@ -243,9 +269,21 @@
 
   // Check for existing session on load (handles OAuth redirect)
   async function checkSession() {
-    const { data: { session } } = await sb.auth.getSession();
-    if (session) {
-      window.location.href = '/';
+    console.log('[Auth] Checking existing session...');
+    console.log('[Auth] Current origin:', window.location.origin);
+    try {
+      const { data: { session }, error } = await sb.auth.getSession();
+      if (error) {
+        console.error('[Auth] getSession error:', error.message, error);
+      }
+      if (session) {
+        console.log('[Auth] Found session for:', session.user?.email, 'Session expires:', new Date(session.expires_at * 1000));
+        window.location.href = '/';
+      } else {
+        console.log('[Auth] No session found');
+      }
+    } catch (e) {
+      console.error('[Auth] checkSession exception:', e);
     }
   }
   checkSession();

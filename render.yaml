@@ -1,16 +1,21 @@
+# Render Blueprint for Dual-Track Planner (Node runtime - Free tier compatible)
+# Connect this repo to Render and it will auto-deploy
+
 services:
   - type: web
     name: dual-track-planner
-    env: docker
-    dockerfilePath: Dockerfile
-    region: oregon  # or frankfurt, singapore, etc.
-    plan: starter  # required: free-tier Render services cannot attach a persistent disk
-    healthCheckPath: /api/health
-    autoDeploy: true
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
     envVars:
       - key: NODE_ENV
         value: production
-    disk:
-      name: planner-data
-      mountPath: /app/data
-      sizeGB: 5  # bumped for larger PDF attachments; increase further if you'll store many large files
+      - key: PORT
+        value: "10000"
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_ANON_KEY
+        sync: false
+    healthCheckPath: /api/health
+    autoDeploy: true
