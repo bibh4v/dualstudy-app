@@ -746,7 +746,52 @@ input,select,textarea{font-family:inherit;color:inherit}
 <script>
 /* ============ SUPABASE INIT ============ */
 const { createClient } = supabase;
-const sb = createClient(window.SUPABASE_CONFIG.url, window.SUPABASE_CONFIG.anonKey);
+const sb = createClient(window.SUPABASE_CONFIG.url, window.SUPABASE_CONFIG.anonKey, {
+  auth: {
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: true
+  }
+});
+console.log('[Supabase] Client initialized with autoRefreshToken:', true);
+
+/* ============ SESSION HELPERS ============ */
+/**
+ * Get a valid session, refreshing if necessary.
+ * Returns the session object or throws if authentication fails.
+ */
+async function getValidSession() {
+  console.log('[getValidSession] Calling sb.auth.getSession()...');
+  const { data: { session }, error } = await sb.auth.getSession();
+
+  if (error) {
+    console.warn('[getValidSession] getSession error:', error.message);
+    console.log('[getValidSession] Attempting refresh...');
+    const { data: { session: refreshedSession }, error: refreshError } = await sb.auth.refreshSession();
+    if (refreshError || !refreshedSession) {
+      console.error('[getValidSession] Refresh failed:', refreshError?.message);
+      throw new Error('Authentication failed - please log in again');
+    }
+    console.log('[getValidSession] Refresh succeeded, returning session for:', refreshedSession.user?.email);
+    return refreshedSession;
+  }
+
+  if (!session) {
+    // Try to refresh in case session expired
+    console.warn('[getValidSession] No session found, attempting refresh...');
+    const { data: { session: refreshedSession }, error: refreshError } = await sb.auth.refreshSession();
+    if (refreshError || !refreshedSession) {
+      console.error('[getValidSession] Refresh failed:', refreshError?.message);
+      throw new Error('No active session - please log in again');
+    }
+    console.log('[getValidSession] Refresh succeeded, returning session for:', refreshedSession.user?.email);
+    return refreshedSession;
+  }
+
+  console.log('[getValidSession] Got valid session for:', session.user?.email);
+  return session;
+}
+
 /* ============ STATE ============ */
 const today = new Date();
 let S = {
@@ -792,8 +837,9 @@ async function migrateLocalStorage() {
     const focusDate = localStorage.getItem('plannerFocusDate') || '';
 
     // Get user ID once
-    const { data: { user } } = await sb.auth.getUser();
-    if (!user) throw new Error('Not authenticated');
+    const session = await getValidSession();
+    if (!session?.user) throw new Error('Not authenticated');
+    const user = session.user;
 
     // Migrate settings
     if (Object.keys(state).length > 0) {
@@ -1037,29 +1083,104 @@ async function migrateLocalStorage() {
 
 /* ============ SUPABASE DATA OPERATIONS ============ */
 async function loadState() {
-  const { data: { user } } = await sb.auth.getUser();
-  if (!user) throw new Error('Not authenticated');
+  const session = await getValidSession();
+  if (!session?.user) {
+    window.location.href = '/auth.html';
+    throw new Error('Not authenticated - redirecting');
+  }
+  const user = session.user;
+  console.log('[loadState] Loading data for user:', user.id);
 
   // Load all data in parallel
-  const [
-    { data: stateData },
-    { data: slotsData },
-    { data: mscSubjectsData },
-    { data: neaTechData },
-    { data: neaNonTechData },
-    { data: notesData },
-    { data: tasksData },
-    { data: goalsData }
-  ] = await Promise.all([
-    sb.from('planner_state').select('*').eq('user_id', user.id).single(),
-    sb.from('slots').select('*').eq('user_id', user.id).order('start_time'),
-    sb.from('msc_subjects').select('*, msc_subtopics(*)').eq('user_id', user.id),
-    sb.from('nea_tech').select('*, nea_tech_subtopics(*)').eq('user_id', user.id),
-    sb.from('nea_nontech').select('*, nea_nontech_subtopics(*)').eq('user_id', user.id),
-    sb.from('notes').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
-    sb.from('tasks').select('*, task_subtopics(*)').eq('user_id', user.id).order('created_at', { ascending: false }),
-    sb.from('goals').select('*').eq('user_id', user.id).order('created_at', { ascending: false })
-  ]);
+  let stateData, slotsData, mscSubjectsData, neaTechData, neaNonTechData, notesData, tasksData, goalsData;
+
+  try {
+    console.log('[loadState] Querying planner_state...');
+    const stateRes = await sb.from('planner_state').select('*').eq('user_id', user.id).single();
+    if (stateRes.error) throw stateRes.error;
+    stateData = stateRes.data;
+    console.log('[loadState] planner_state OK');
+  } catch (e) {
+    console.error('[loadState] planner_state error:', e);
+    throw e;
+  }
+
+  try {
+    console.log('[loadState] Querying slots...');
+    const slotsRes = await sb.from('slots').select('*').eq('user_id', user.id).order('start_time');
+    if (slotsRes.error) throw slotsRes.error;
+    slotsData = slotsRes.data;
+    console.log('[loadState] slots OK:', slotsData?.length);
+  } catch (e) {
+    console.error('[loadState] slots error:', e);
+    throw e;
+  }
+
+  try {
+    console.log('[loadState] Querying msc_subjects...');
+    const mscRes = await sb.from('msc_subjects').select('*, msc_subtopics(*)').eq('user_id', user.id);
+    if (mscRes.error) throw mscRes.error;
+    mscSubjectsData = mscRes.data;
+    console.log('[loadState] msc_subjects OK:', mscSubjectsData?.length);
+  } catch (e) {
+    console.error('[loadState] msc_subjects error:', e);
+    throw e;
+  }
+
+  try {
+    console.log('[loadState] Querying nea_tech...');
+    const neaTechRes = await sb.from('nea_tech').select('*, nea_tech_subtopics(*)').eq('user_id', user.id);
+    if (neaTechRes.error) throw neaTechRes.error;
+    neaTechData = neaTechRes.data;
+    console.log('[loadState] nea_tech OK:', neaTechData?.length);
+  } catch (e) {
+    console.error('[loadState] nea_tech error:', e);
+    throw e;
+  }
+
+  try {
+    console.log('[loadState] Querying nea_nontech...');
+    const neaNonTechRes = await sb.from('nea_nontech').select('*, nea_nontech_subtopics(*)').eq('user_id', user.id);
+    if (neaNonTechRes.error) throw neaNonTechRes.error;
+    neaNonTechData = neaNonTechRes.data;
+    console.log('[loadState] nea_nontech OK:', neaNonTechData?.length);
+  } catch (e) {
+    console.error('[loadState] nea_nontech error:', e);
+    throw e;
+  }
+
+  try {
+    console.log('[loadState] Querying notes...');
+    const notesRes = await sb.from('notes').select('*').eq('user_id', user.id).order('created_at', { ascending: false });
+    if (notesRes.error) throw notesRes.error;
+    notesData = notesRes.data;
+    console.log('[loadState] notes OK:', notesData?.length);
+  } catch (e) {
+    console.error('[loadState] notes error:', e);
+    throw e;
+  }
+
+  try {
+    console.log('[loadState] Querying tasks...');
+    const tasksRes = await sb.from('tasks').select('*, task_subtopics(*)').eq('user_id', user.id).order('created_at', { ascending: false });
+    if (tasksRes.error) throw tasksRes.error;
+    tasksData = tasksRes.data;
+    console.log('[loadState] tasks OK:', tasksData?.length);
+  } catch (e) {
+    console.error('[loadState] tasks error:', e);
+    throw e;
+  }
+
+  try {
+    console.log('[loadState] Querying goals...');
+    const goalsRes = await sb.from('goals').select('*').eq('user_id', user.id).order('created_at', { ascending: false });
+    if (goalsRes.error) throw goalsRes.error;
+    goalsData = goalsRes.data;
+    console.log('[loadState] goals OK:', goalsData?.length);
+  } catch (e) {
+    console.error('[loadState] goals error:', e);
+    throw e;
+  }
 
   // Map to frontend state format
   if (stateData) {
@@ -1153,8 +1274,9 @@ async function loadState() {
 }
 
 async function saveState() {
-  const { data: { user } } = await sb.auth.getUser();
-  if (!user) throw new Error('Not authenticated');
+  const session = await getValidSession();
+  if (!session?.user) throw new Error('Not authenticated');
+  const user = session.user;
 
   // Save planner settings
   const { error: stateError } = await sb.from('planner_state').upsert({
@@ -1343,16 +1465,26 @@ async function saveState() {
 }
 
 async function uploadFile(file) {
-  const { data: { user } } = await sb.auth.getUser();
-  if (!user) throw new Error('Not authenticated');
+  // Get valid session (auto-refreshes if expired)
+  const session = await getValidSession();
+  if (!session?.user) throw new Error('Not authenticated - please log in again');
+  const user = session.user;
 
   const fileName = user.id + '/' + Date.now() + '-' + file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+  console.log('[uploadFile] Uploading to:', fileName, 'user:', user.id);
   const { data, error } = await sb.storage
     .from('note-attachments')
-    .upload(fileName, file, { contentType: file.type });
+    .upload(fileName, file, {
+      contentType: file.type
+      // Don't pass Authorization header - Supabase client auto-attaches auth token
+    });
 
-  if (error) throw error;
+  if (error) {
+    console.error('[uploadFile] Upload error:', error);
+    throw error;
+  }
 
+  console.log('[uploadFile] Upload successful:', data.path);
   const { data: { publicUrl } } = sb.storage.from('note-attachments').getPublicUrl(data.path);
   return { url: publicUrl, name: file.name, type: file.type, size: file.size };
 }
@@ -1364,7 +1496,15 @@ async function deleteFile(fileUrl) {
   const pathParts = url.pathname.split('/note-attachments/');
   if (pathParts.length < 2) return;
   const filePath = pathParts[1];
-  await sb.storage.from('note-attachments').remove([filePath]);
+
+  try {
+    const session = await getValidSession();
+    if (!session?.user) return; // Silently skip if not authenticated
+
+    await sb.storage.from('note-attachments').remove([filePath]);
+  } catch (e) {
+    console.warn('Delete file failed (session may have expired):', e);
+  }
 }
 
 function setSyncStatus(status, text) {
@@ -2506,6 +2646,13 @@ document.addEventListener("visibilitychange",()=>{
     // startFocus();
   }
 });
+
+// Auto-refresh Supabase session when tab becomes visible (handles idle tab expiration)
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === 'visible') {
+    getValidSession().catch(console.warn);
+  }
+});
 // Initialize from saved state
 focusBaseSeconds = S.focusMin * 60;
 focusElapsed = focusBaseSeconds;
@@ -2639,15 +2786,38 @@ function applySeed(){
   ];
 }
 
+/* ============ AUTH STATE HANDLER ============ */
+// Listen for auth state changes (login, logout, token refresh)
+sb.auth.onAuthStateChange((event, session) => {
+  console.log('[onAuthStateChange] Event:', event, 'Session user:', session?.user?.id, 'Email:', session?.user?.email);
+
+  if (event === 'SIGNED_OUT' || !session) {
+    // User signed out - redirect to auth page
+    console.log('[onAuthStateChange] Redirecting to auth.html');
+    window.location.href = '/auth.html';
+  } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+    // User signed in or token refreshed - reload state if we're on the main page
+    if (window.location.pathname === '/' || window.location.pathname === '/index.html') {
+      // Reload the page to re-initialize with new session
+      console.log('[onAuthStateChange] Reloading page for new session');
+      window.location.reload();
+    }
+  }
+});
+
 /* ============ INIT ============ */
 async function init(){
   try{
+    console.log('[Init] Starting initialization...');
     setSyncStatus('syncing','Connecting…');
     await loadState();
+    console.log('[Init] loadState completed');
     // One-time migration from localStorage
     await migrateLocalStorage();
     setSyncStatus('ok','Synced');
+    console.log('[Init] Initialization complete');
   }catch(e){
+    console.error('[Init] Error:', e);
     setSyncStatus('err','Offline');
     // On 401 loadState redirects to /auth.html, so we never reach here
   }
@@ -2674,8 +2844,10 @@ async function init(){
 $("logoutBtn").addEventListener("click",async()=>{
   try{
     await sb.auth.signOut();
-  }catch(e){}
-  window.location.href = '/auth.html';
+  }catch(e){
+    console.error('Logout error:', e);
+  }
+  // onAuthStateChange will handle redirect
 });
 
 init();
